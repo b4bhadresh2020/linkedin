@@ -10,8 +10,9 @@ use Facebook\WebDriver\Remote\DesiredCapabilities;
 use Facebook\WebDriver\Chrome\ChromeOptions;
 use Faker\Generator as Faker;
 use Illuminate\Support\Str;
-use App\Models\User;
-
+use App\Models\Linkedin;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 
 class LinkedinController extends Controller
 {
@@ -31,9 +32,13 @@ class LinkedinController extends Controller
      *
      * @return \Illuminate\Contracts\Support\Renderable
      */
-    public function index()
+    public function index(Request $request)
     {
-        
+        $linkedinUsers = Linkedin::paginate(10);
+        return view("home",compact("linkedinUsers"));
+    }
+
+    public function create(){
         // create your browser session
         $serverUrl = 'http://localhost:4444';
 
@@ -51,25 +56,33 @@ class LinkedinController extends Controller
         $driver->get('https://www.linkedin.com/signup/cold-join?source=guest_homepage-basic_nav-header-signin');
 
         //user data
-        
+
         $fullName   = $this->faker->name;
         $firstName  = substr($fullName,0, strrpos($fullName,' '));
         $lastName   = substr($fullName, (strrpos($fullName,' ') + 1));
 
         $userData = array(
-            'email' => "bhadresh.upwork@gmail.com",
-            'password' => Str::random(10),
-            'first_name' => $firstName,
+            'uuid'      =>  Str::uuid(),
+            'email'     => $this->faker->safeEmail,
+            'password'  => Str::random(10),
+            'first_name'=> $firstName,
             'last_name' => $lastName
         );
 
+        // Create a directory for the particular UUID
+        $directoryPath = public_path('storage/linkedin/'.$userData['uuid']);
+        File::makeDirectory($directoryPath, $mode = 0777, true, true);
+
         // Fill the registration form
         $driver->findElement(WebDriverBy::id('email-or-phone'))->sendKeys($userData['email']); // fill the email box
-        sleep(3);
         $driver->findElement(WebDriverBy::id('password'))->sendKeys($userData['password']); // fill the password box
-        sleep(3);
+
+        // Take a screenshot
+        $screenshotFileName = $directoryPath.'/screenshot_1.png';
+        $driver->takeScreenshot($screenshotFileName);
+
+        // submit
         $submitButton = $driver->findElement(WebDriverBy::id('join-form-submit'));
-        sleep(3);
         $submitButton->click();
 
         // Wait untill we get first_name element find from page
@@ -77,12 +90,33 @@ class LinkedinController extends Controller
         $driver->wait(10, 1000)->until(WebDriverExpectedCondition::visibilityOf($firstNameElement));
 
         $driver->findElement(WebDriverBy::id('first-name'))->sendKeys($userData['first_name']); // fill the first-name box
-        sleep(3);
         $driver->findElement(WebDriverBy::id('last-name'))->sendKeys($userData['last_name']); // fill the last-name box
-        sleep(3);
+
+        // Take a screenshot
+        $screenshotFileName = $directoryPath.'/screenshot_2.png';
+        $driver->takeScreenshot($screenshotFileName);
+
+        //submit
         $submitButton = $driver->findElement(WebDriverBy::id('join-form-submit'));
-        sleep(3);
         $submitButton->click();
-        //User::create($userData);
+
+        // wait 2 seconds because here verification popup is open.
+        sleep(2);
+
+        // Take a screenshot
+        $screenshotFileName = $directoryPath.'/screenshot_3.png';
+        $driver->takeScreenshot($screenshotFileName);
+        $driver->quit();
+
+        // save userdata in linkdedin schema.
+        Linkedin::create($userData);
+
+        return redirect('/linkedin');
+    }
+
+    public function show($uuid){
+        $directoryPath = public_path('storage/linkedin/'.$uuid);
+        $images = File::files($directoryPath);
+        return view("screenshot",compact("uuid","images"));
     }
 }
